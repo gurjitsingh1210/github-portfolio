@@ -1,0 +1,69 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import scipy.cluster.hierarchy as sch
+from scipy.spatial.distance import pdist
+
+# File paths
+file_paths = {
+    "csc1_vs_control": "csc1_v_control.csv",
+    "csc2_vs_control": "csc2_v_control.csv",
+    "csc3_vs_control": "csc3_v_control.csv",
+    "csc2_vs_csc1": "csc2_v_csc1.csv",
+    "csc3_vs_csc1": "csc3_v_csc1.csv",
+    "csc3_vs_csc2": "csc3_v_csc2.csv"
+}
+
+# Load and process data
+fc_matrix = pd.DataFrame()
+for group, path in file_paths.items():
+    df = pd.read_csv(path)
+    df.columns = [col.strip() for col in df.columns]
+    df = df[["target name", "fc_ratio"]].dropna()
+    df = df.set_index("target name")
+    df["fc_ratio"] = df["fc_ratio"].replace(0, np.nan)
+    df["fc_ratio"] = np.log2(df["fc_ratio"])
+    fc_matrix[group] = df["fc_ratio"]
+
+# Rename columns
+fc_matrix.columns = [col.replace("csc", "scs") for col in fc_matrix.columns]
+
+# Save and remove scs1_vs_control temporarily
+first_col = fc_matrix["scs1_vs_control"]
+remaining_cols = fc_matrix.drop(columns=["scs1_vs_control"])
+
+# Cluster remaining columns
+col_linkage = sch.linkage(remaining_cols.T.fillna(0), method='average', metric='euclidean')
+col_dendro = sch.dendrogram(col_linkage, no_plot=True)
+ordered_cols = [remaining_cols.columns[i] for i in col_dendro['leaves']]
+
+# Reconstruct with scs1_vs_control first
+fc_matrix = pd.concat([first_col] + [remaining_cols[col] for col in ordered_cols], axis=1)
+
+# Row clustering
+row_linkage = sch.linkage(fc_matrix.fillna(0), method='average', metric='euclidean')
+
+# Plot
+sns.set(font_scale=0.5)
+g = sns.clustermap(
+    fc_matrix,
+    row_linkage=row_linkage,
+    col_cluster=False,  # prevent reordering again
+    cmap="RdYlGn_r",
+    center=0,
+    linewidths=0.5,
+    linecolor='gray',
+    figsize=(13, 10),
+    cbar_kws={'label': 'Log2 Fold Change'},
+    xticklabels=True,
+    yticklabels=True
+)
+
+# Title and labels
+g.ax_heatmap.set_title("Hierarchical Clustering of Differentially Expressed miRNAs (log2 FC)", fontsize=13, pad=16)
+g.ax_heatmap.set_xlabel("Group Comparisons", fontsize=11)
+g.ax_heatmap.set_ylabel("miRNAs", fontsize=11)
+
+plt.tight_layout()
+plt.show()
