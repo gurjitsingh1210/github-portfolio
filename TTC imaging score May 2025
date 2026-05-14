@@ -1,0 +1,53 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load the image
+image_path = "KB-Tre TTC NMP.png"  # Change if needed
+img = cv2.imread(image_path)
+
+if img is None:
+    raise ValueError(f"Image not found at: {image_path}")
+
+img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+# --- Create tissue mask (exclude white background) ---
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+_, mask_tissue = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
+
+# Clean tissue mask to remove noise
+kernel = np.ones((5, 5), np.uint8)
+mask_tissue_clean = cv2.morphologyEx(mask_tissue, cv2.MORPH_OPEN, kernel)
+
+# --- Define DEAD tissue (light red/yellowish red) ---
+lower_dead = np.array([0, 50, 120])
+upper_dead = np.array([12, 180, 255])
+mask_dead = cv2.inRange(hsv, lower_dead, upper_dead)
+
+# --- Define LIVE tissue as everything in tissue that's not dead ---
+mask_live = np.logical_and(mask_dead == 0, mask_tissue_clean > 0)
+
+# --- Area calculation ---
+live_area = np.sum(mask_live)
+dead_area = np.sum(np.logical_and(mask_dead > 0, mask_tissue_clean > 0))
+total_area = np.sum(mask_tissue_clean > 0)
+
+live_percent = (live_area / total_area) * 100
+dead_percent = (dead_area / total_area) * 100
+
+print(f"Live Tissue: {live_percent:.2f}%")
+print(f"Dead Tissue: {dead_percent:.2f}%")
+
+# --- Overlay visualization ---
+overlay = img_rgb.copy()
+overlay[mask_live] = [255, 0, 0]  # Live = Bright Red
+overlay[np.logical_and(mask_dead > 0, mask_tissue_clean > 0)] = [255, 200, 200]  # Dead = Light Red
+
+# Show image
+plt.figure(figsize=(10, 6))
+plt.imshow(overlay)
+plt.title(f"TTC Analysis\nLive: {live_percent:.2f}% | Dead: {dead_percent:.2f}%")
+plt.axis("off")
+plt.tight_layout()
+plt.show()
